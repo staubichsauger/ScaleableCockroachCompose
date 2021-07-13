@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+
+  crdb-0:
+    image: cockroachdb/cockroach:latest
+    hostname: crdb-0
+    command: start-single-node --cluster-name=test --logtostderr=WARNING --log-file-verbosity=WARNING --insecure
+    environment:
+      - TCP_PORTS=8080,8081,26257
+
+  crdb:
+    image: cockroachdb/cockroach:latest
+    deploy:
+      replicas: 1
+    command: start --cluster-name=test --logtostderr=WARNING --log-file-verbosity=WARNING --insecure --join=crdb-0
+    depends_on:
+      - crdb-0
+    environment:
+      - TCP_PORTS=8080,8081,26257
+
+  lb:
+    image: dockercloud/haproxy
+    links:
+      - crdb-0
+      - crdb
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 26257:26257  # postgres-compatible sql port
+      - 8080:8080    # web ui
+      - 8081:8081    # metrics
+    depends_on:
+      - crdb-0
+      - crdb
+
+  crdb-init:
+    container_name: crdb-init
+    hostname: crdb-init
+    image: cockroachdb/cockroach:latest
+    command: sql --insecure --url="postgres://lb:26257" --execute="CREATE DATABASE IF NOT EXISTS test"
+    restart: on-failure
+    depends_on:
+      - lb
+
